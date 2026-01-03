@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Basic -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Xoleric core</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🥷</text></svg>">
+</head>
+<body>
+  <meta name="description" content="Interactive 3D room experience built with Three.js">
+
+  <!-- Open Graph (Telegram, WhatsApp, Facebook, Discord, iMessage) -->
+  <meta property="og:title" content="Xoleric Home">
+  <meta property="og:description" content="Interactive 3D room experience built with Three.js">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://devxoleric.github.io/xoleric_home/">
+  <meta property="og:image" content="https://postimg.cc/bSZthcY7.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Xoleric Home">
+  <meta name="twitter:description" content="Interactive 3D room experience built with Three.js">
+  <meta name="twitter:image" content="https://i.imgur.com/jevL9av.jpg">
+
+  <!-- Cache control (preview tez yangilanishi uchun) -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/104/three.min.js"></script>
+</head>
+
+<body>
+
+<script>
+  let camera, scene, renderer, mesh, material, e, objects,
+      imgData, uv, info, lon = 0, lat = 0;
+
+  var mouseDown = {};
+  var mouse = new THREE.Vector2();
+  var raycaster = new THREE.Raycaster();
+
+  var canvas = document.createElement('canvas');
+  var ctx = canvas.getContext('2d');
+
+  init({
+    texture: "https://i.imgur.com/jevL9av.jpg",
+    stencil: "https://i.imgur.com/NUKbrbl.png",
+    objects: {
+      "255,0,0": "Socket 1",
+      "245,0,0": "Window 1",
+      "235,0,0": "White box",
+      "225,0,0": "Box",
+      "215,0,0": "Drawer",
+      "205,0,0": "Socket 2",
+      "195,0,0": "Fireplace",
+      "185,0,0": "Window 2",
+      "175,0,0": "And here was the moose",
+      "165,0,0": "Table"
+    }
+  });
+
+  function init(json) {
+    objects = json.objects;
+
+    camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 1, 1100);
+    camera.target = new THREE.Vector3(0, 0, 0);
+
+    scene = new THREE.Scene();
+
+    let geometry = new THREE.SphereBufferGeometry(500, 60, 40);
+    geometry.scale(-1, 1, 1);
+
+    material = createMaterial(json.texture, json.stencil);
+    scene.add(mesh = new THREE.Mesh(geometry, material));
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.append(renderer.domElement);
+
+    info = document.createElement('div');
+    info.id = 'info';
+    document.body.append(info);
+
+    addEventListener('mousedown', onPointerStart);
+    addEventListener('mousemove', onPointerMove);
+    addEventListener('mouseup', onPointerUp);
+    addEventListener('wheel', onDocumentMouseWheel);
+    addEventListener('touchstart', onPointerStart);
+    addEventListener('touchmove', onPointerMove);
+    addEventListener('touchend', onPointerUp);
+    addEventListener('resize', onWindowResize);
+
+    animate();
+  }
+
+  function createMaterial(img, stencil) {
+    let loader = new THREE.TextureLoader();
+
+    let stencilImage = new Image();
+    stencilImage.crossOrigin = "anonymous";
+    stencilImage.src = stencil;
+
+    stencilImage.onload = function() {
+      canvas.width = stencilImage.width;
+      canvas.height = stencilImage.height;
+      ctx.drawImage(stencilImage, 0, 0);
+      imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    };
+
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        mouse: { value: mouse },
+        texture1: { value: loader.load(img) },
+        texture2: { value: loader.load(stencil) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        precision highp float;
+        varying vec2 vUv;
+        uniform vec2 mouse;
+        uniform sampler2D texture1;
+        uniform sampler2D texture2;
+        void main() {
+          vec4 stencil = texture2D(texture2, vUv);
+          gl_FragColor = texture2D(texture1, vUv);
+          vec4 c = texture2D(texture2, mouse);
+          if (abs(c.x - stencil.x) < 0.0001 && stencil.x > 0.)
+            gl_FragColor += vec4(0.,0.2,0.,0.);
+        }`
+    });
+  }
+
+  function onWindowResize() {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  }
+
+  function onPointerStart(event) {
+    mouseDown.x = event.clientX || event.touches[0].clientX;
+    mouseDown.y = event.clientY || event.touches[0].clientY;
+    mouseDown.lon = lon;
+    mouseDown.lat = lat;
+  }
+
+  function raycast(event) {
+    let rect = renderer.domElement.getBoundingClientRect();
+    let x = (event.clientX - rect.left) / rect.width;
+    let y = (event.clientY - rect.top) / rect.height;
+
+    mouse.set(x * 2 - 1, 1 - y * 2);
+    raycaster.setFromCamera(mouse, camera);
+
+    let intersects = raycaster.intersectObjects(scene.children);
+    if (!intersects.length || !intersects[0].uv || !imgData) return;
+
+    uv = intersects[0].uv;
+    material.uniforms.mouse.value = uv;
+
+    let px = Math.floor(uv.x * canvas.width);
+    let py = Math.floor((1 - uv.y) * canvas.height);
+    let off = (py * canvas.width + px) * 4;
+
+    let r = imgData.data[off];
+    let g = imgData.data[off + 1];
+    let b = imgData.data[off + 2];
+
+    info.innerHTML = objects[`${r},${g},${b}`] || "";
+    info.style.left = event.clientX + 15 + 'px';
+    info.style.top = event.clientY + 'px';
+    info.style.opacity = r + g + b ? 1 : 0;
+  }
+
+  function onPointerMove(event) {
+    e = event;
+    raycast(event);
+    if (!mouseDown.x) return;
+
+    let cx = event.clientX || event.touches[0].clientX;
+    let cy = event.clientY || event.touches[0].clientY;
+
+    lon = (mouseDown.x - cx) * camera.fov / 600 + mouseDown.lon;
+    lat = (cy - mouseDown.y) * camera.fov / 600 + mouseDown.lat;
+    lat = Math.max(-85, Math.min(85, lat));
+  }
+
+  function onPointerUp() {
+    mouseDown.x = null;
+  }
+
+  function onDocumentMouseWheel(event) {
+    camera.fov = THREE.Math.clamp(camera.fov + event.deltaY * 0.05, 10, 75);
+    camera.updateProjectionMatrix();
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    let phi = THREE.Math.degToRad(90 - lat);
+    let theta = THREE.Math.degToRad(lon);
+    camera.target.set(
+      0.001 * Math.sin(phi) * Math.cos(theta),
+      0.001 * Math.cos(phi),
+      0.001 * Math.sin(phi) * Math.sin(theta)
+    );
+    camera.lookAt(camera.target);
+    e && raycast(e);
+    renderer.render(scene, camera);
+  }
+</script>
+
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+  }
+  #info {
+    position: absolute;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-family: Arial, sans-serif;
+    font-size: 16px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    pointer-events: none;
+    opacity: 0;
+  }
+</style>
+
+</body>
+</html>
